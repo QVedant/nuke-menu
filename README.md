@@ -27,3 +27,17 @@ Pick the ongoing #Week and the app autodetects the day.
 **Initial Release**
 
 The menu is currently hardcoded. Menu errors will be fixed and updated gradually.
+
+## Download
+
+The .apk is provided under Github Release, and can be sideloaded with a 3rd party phone application or a laptop.
+
+Orrr lwk just give me your watch i'll set it up
+
+
+## Contact
+
+nukestudios.dev@gmail.com
+
+PESU ECC
+Bengaluru, India
