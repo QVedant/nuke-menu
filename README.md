@@ -6,10 +6,10 @@ Currently supports the **Pixel Canteen at PES University, ECC**.
 
 ## Screenshots
 
-<p align="center">
-  <img src="screenshots/home.png" width="300">
-  <img src="screenshots/menu1.png" width="300">
-</p>
+<div align="center">
+  <img src="screenshots/home.png" width="300" alt="NukeMenu home screen">
+  <img src="screenshots/menu1.png" width="300" alt="NukeMenu menu screen">
+</div>
 
 ## Setup
 
