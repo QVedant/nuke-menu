@@ -1,5 +1,6 @@
 package com.nuke.pesumenu.presentation.notifications
 
+import android.app.AlarmManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -25,6 +26,9 @@ class MealNotificationReceiver : BroadcastReceiver() {
         val notificationId =
             intent.getIntExtra("notificationId", 1001)
 
+        val isTomorrow =
+            intent.getBooleanExtra("isTomorrow", false)
+
         CoroutineScope(Dispatchers.IO).launch {
 
             try {
@@ -41,14 +45,17 @@ class MealNotificationReceiver : BroadcastReceiver() {
                 val preferences =
                     AppPreferences(context)
 
-                val currentWeek =
-                    preferences.getCurrentWeek()
-
-                val today =
+                val targetDate = if (isTomorrow) {
+                    java.time.LocalDate.now().plusDays(1)
+                } else {
                     java.time.LocalDate.now()
+                }
+
+                val currentWeek =
+                    preferences.getWeekForDate(targetDate)
 
                 val dayNumber =
-                    today.dayOfWeek.value % 7 + 1
+                    targetDate.dayOfWeek.value % 7 + 1
 
                 val meals =
                     repository.getMealsForDay(
@@ -63,7 +70,9 @@ class MealNotificationReceiver : BroadcastReceiver() {
 
                 if (meal != null) {
 
-                    val mealName =
+                    val mealName = if (isTomorrow) {
+                        "TOMORROW'S BREAKFAST"
+                    } else {
                         when (mealType) {
                             1 -> "BREAKFAST"
                             2 -> "LUNCH"
@@ -71,6 +80,7 @@ class MealNotificationReceiver : BroadcastReceiver() {
                             4 -> "DINNER"
                             else -> "MEAL"
                         }
+                    }
 
                     val menu =
                         meal.customMenu
@@ -84,10 +94,9 @@ class MealNotificationReceiver : BroadcastReceiver() {
                     )
                 }
 
-                // Schedule this reminder again for tomorrow.
+                // Schedule this reminder again for tomorrow using configured preference.
                 scheduleTomorrow(
                     context = context,
-                    mealType = mealType,
                     notificationId = notificationId
                 )
 
@@ -100,122 +109,27 @@ class MealNotificationReceiver : BroadcastReceiver() {
 
     private fun scheduleTomorrow(
         context: Context,
-        mealType: Int,
         notificationId: Int
     ) {
-
-        when (notificationId) {
-
-            1001 -> schedule(
-                context,
-                7,
-                40,
-                mealType,
-                notificationId
-            )
-
-            1002 -> schedule(
-                context,
-                13,
-                0,
-                mealType,
-                notificationId
-            )
-
-            1003 -> schedule(
-                context,
-                16,
-                45,
-                mealType,
-                notificationId
-            )
-
-            1004 -> schedule(
-                context,
-                19,
-                0,
-                mealType,
-                notificationId
-            )
-
-            1005 -> schedule(
-                context,
-                19,
-                30,
-                mealType,
-                notificationId
-            )
-        }
-    }
-
-    private fun schedule(
-        context: Context,
-        hour: Int,
-        minute: Int,
-        mealType: Int,
-        notificationId: Int
-    ) {
+        val preferences = AppPreferences(context)
+        val config = ReminderConfig.ALL.firstOrNull { it.id == notificationId } ?: return
+        val (hour, minute) = preferences.getReminderTime(config)
 
         val alarmManager =
-            context.getSystemService(
-                Context.ALARM_SERVICE
-            ) as android.app.AlarmManager
+            context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
         if (!alarmManager.canScheduleExactAlarms()) {
             return
         }
 
-        val intent =
-            Intent(
-                context,
-                MealNotificationReceiver::class.java
-            ).apply {
-                putExtra("mealType", mealType)
-                putExtra("notificationId", notificationId)
-            }
-
-        val pendingIntent =
-            android.app.PendingIntent.getBroadcast(
-                context,
-                notificationId,
-                intent,
-                android.app.PendingIntent.FLAG_UPDATE_CURRENT or
-                        android.app.PendingIntent.FLAG_IMMUTABLE
-            )
-
-        val calendar =
-            java.util.Calendar.getInstance().apply {
-
-                add(
-                    java.util.Calendar.DAY_OF_YEAR,
-                    1
-                )
-
-                set(
-                    java.util.Calendar.HOUR_OF_DAY,
-                    hour
-                )
-
-                set(
-                    java.util.Calendar.MINUTE,
-                    minute
-                )
-
-                set(
-                    java.util.Calendar.SECOND,
-                    0
-                )
-
-                set(
-                    java.util.Calendar.MILLISECOND,
-                    0
-                )
-            }
-
-        alarmManager.setExactAndAllowWhileIdle(
-            android.app.AlarmManager.RTC_WAKEUP,
-            calendar.timeInMillis,
-            pendingIntent
+        AlarmScheduler.scheduleMeal(
+            context = context,
+            alarmManager = alarmManager,
+            hour = hour,
+            minute = minute,
+            mealType = config.mealType,
+            notificationId = config.id,
+            isTomorrow = config.isTomorrow
         )
     }
 }

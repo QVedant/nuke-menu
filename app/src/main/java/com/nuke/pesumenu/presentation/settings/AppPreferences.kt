@@ -1,7 +1,7 @@
 package com.nuke.pesumenu.presentation.settings
 
 import android.content.Context
-import java.time.DayOfWeek
+import com.nuke.pesumenu.presentation.notifications.ReminderConfig
 import java.time.LocalDate
 
 class AppPreferences(context: Context) {
@@ -21,18 +21,17 @@ class AppPreferences(context: Context) {
             .apply()
     }
 
-    fun getCurrentWeek(): Int {
-
+    fun getWeekForDate(targetDate: LocalDate): Int {
         val startingWeek =
             preferences.getInt("starting_week", 1)
 
-        val setupDate =
-            LocalDate.parse(
-                preferences.getString(
-                    "setup_date",
-                    LocalDate.now().toString()
-                )
-            )
+        val setupDateStr =
+            preferences.getString(
+                "setup_date",
+                targetDate.toString()
+            ) ?: targetDate.toString()
+
+        val setupDate = LocalDate.parse(setupDateStr)
 
         // Find the Sunday of the setup week
         val cycleStartDate =
@@ -40,17 +39,41 @@ class AppPreferences(context: Context) {
                 setupDate.dayOfWeek.value.toLong() % 7
             )
 
-        val today = LocalDate.now()
-
         val daysSinceStart =
             java.time.temporal.ChronoUnit.DAYS.between(
                 cycleStartDate,
-                today
+                targetDate
             )
 
         val weeksPassed =
             (daysSinceStart / 7).toInt()
 
         return ((startingWeek - 1 + weeksPassed) % 4) + 1
+    }
+
+    fun getCurrentWeek(): Int {
+        return getWeekForDate(LocalDate.now())
+    }
+
+    fun getReminderTime(config: ReminderConfig): Pair<Int, Int> {
+        val hour = preferences.getInt("${config.key}_hour", config.defaultHour)
+        val minute = preferences.getInt("${config.key}_minute", config.defaultMinute)
+        return Pair(hour, minute)
+    }
+
+    fun saveReminderTime(config: ReminderConfig, hour: Int, minute: Int) {
+        preferences.edit()
+            .putInt("${config.key}_hour", hour)
+            .putInt("${config.key}_minute", minute)
+            .apply()
+    }
+
+    fun resetAllReminderTimes() {
+        val editor = preferences.edit()
+        ReminderConfig.ALL.forEach { config ->
+            editor.remove("${config.key}_hour")
+            editor.remove("${config.key}_minute")
+        }
+        editor.apply()
     }
 }

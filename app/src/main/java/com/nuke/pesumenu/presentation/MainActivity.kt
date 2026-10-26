@@ -70,6 +70,7 @@ import com.nuke.pesumenu.presentation.data.MealRepository
 import com.nuke.pesumenu.presentation.notifications.AlarmScheduler
 import com.nuke.pesumenu.presentation.notifications.NotificationHelper
 import com.nuke.pesumenu.presentation.settings.AppPreferences
+import com.nuke.pesumenu.presentation.settings.ReminderSetupScreen
 import com.nuke.pesumenu.presentation.settings.WeekSetupScreen
 import com.nuke.pesumenu.presentation.theme.PESUMenuTheme
 import kotlinx.coroutines.launch
@@ -80,8 +81,10 @@ class MainActivity : ComponentActivity() {
     private val notificationPermissionLauncher =
         registerForActivityResult(
             ActivityResultContracts.RequestPermission()
-        ) {
-            requestExactAlarmPermission()
+        ) { isGranted ->
+            if (isGranted) {
+                AlarmScheduler.scheduleAll(this)
+            }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -112,27 +115,57 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    var setupStep by remember {
+                        mutableStateOf("week")
+                    }
+
+                    var pendingWeek by remember {
+                        mutableIntStateOf(1)
+                    }
+
                     if (!setupComplete) {
 
-                        WeekSetupScreen(
-                            onWeekSelected = { week ->
+                        when (setupStep) {
 
-                                preferences.saveWeekSetup(
-                                    week = week,
-                                    setupDate =
-                                        java.time.LocalDate.now()
+                            "week" -> {
+                                WeekSetupScreen(
+                                    onWeekSelected = { week ->
+                                        pendingWeek = week
+                                        setupStep = "reminders"
+                                    }
                                 )
-
-                                setupComplete = true
-
-                                NotificationHelper
-                                    .createNotificationChannel(
-                                        this@MainActivity
-                                    )
-
-                                requestNotificationPermission()
                             }
-                        )
+
+                            "reminders" -> {
+                                ReminderSetupScreen(
+                                    preferences = preferences,
+                                    isInitialSetup = true,
+                                    onComplete = {
+                                        preferences.saveWeekSetup(
+                                            week = pendingWeek,
+                                            setupDate =
+                                                java.time.LocalDate.now()
+                                        )
+
+                                        setupComplete = true
+
+                                        NotificationHelper
+                                            .createNotificationChannel(
+                                                this@MainActivity
+                                            )
+
+                                        AlarmScheduler.scheduleAll(
+                                            this@MainActivity
+                                        )
+
+                                        requestNotificationPermission()
+                                    },
+                                    onBack = {
+                                        setupStep = "week"
+                                    }
+                                )
+                            }
+                        }
 
                     } else {
 
@@ -169,8 +202,26 @@ class MainActivity : ComponentActivity() {
                                         currentScreen = "change_week"
                                     },
 
+                                    onReminders = {
+                                        currentScreen = "reminders"
+                                    },
+
                                     onBack = {
                                         currentScreen = "menu"
+                                    }
+                                )
+                            }
+
+                            "reminders" -> {
+
+                                ReminderSetupScreen(
+                                    preferences = preferences,
+                                    isInitialSetup = false,
+                                    onComplete = {
+                                        currentScreen = "settings"
+                                    },
+                                    onBack = {
+                                        currentScreen = "settings"
                                     }
                                 )
                             }
@@ -204,16 +255,11 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
 
-        val alarmManager =
-            getSystemService(ALARM_SERVICE)
-                    as android.app.AlarmManager
-
         if (
             ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED &&
-            alarmManager.canScheduleExactAlarms()
+            ) == PackageManager.PERMISSION_GRANTED
         ) {
             AlarmScheduler.scheduleAll(this)
         }
@@ -233,34 +279,14 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        requestExactAlarmPermission()
-    }
-
-    private fun requestExactAlarmPermission() {
-
-        val alarmManager =
-            getSystemService(ALARM_SERVICE)
-                    as android.app.AlarmManager
-
-        if (alarmManager.canScheduleExactAlarms()) {
-
-            AlarmScheduler.scheduleAll(this)
-
-        } else {
-
-            val intent = Intent(
-                Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                Uri.parse("package:$packageName")
-            )
-
-            startActivity(intent)
-        }
+        AlarmScheduler.scheduleAll(this)
     }
 }
 
 @Composable
 fun SettingsScreen(
     onChangeWeek: () -> Unit,
+    onReminders: () -> Unit,
     onBack: () -> Unit
 ) {
     val listState =
@@ -341,6 +367,83 @@ fun SettingsScreen(
                         Text(
                             text =
                                 "Choose a different\ncanteen week",
+                            style =
+                                MaterialTheme
+                                    .typography
+                                    .bodySmall,
+                            color =
+                                Color(0xFFB8B4C4),
+                            textAlign =
+                                TextAlign.Center,
+                            modifier =
+                                Modifier.padding(top = 3.dp)
+                        )
+                    }
+                }
+            }
+
+            // ---------------------------------------------
+            // REMINDER TIMES
+            // ---------------------------------------------
+
+            item {
+
+                Card(
+                    onClick = onReminders,
+                    modifier =
+                        Modifier
+                            .padding(horizontal = 14.dp)
+                            .fillMaxWidth(),
+                    shape =
+                        RoundedCornerShape(24.dp),
+                    colors =
+                        CardDefaults.cardColors(
+                            containerColor =
+                                Color(0xFF211D35)
+                        )
+                ) {
+
+                    Column(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(
+                                    horizontal = 16.dp,
+                                    vertical = 18.dp
+                                ),
+                        horizontalAlignment =
+                            Alignment.CenterHorizontally
+                    ) {
+
+                        Box(
+                            modifier =
+                                Modifier
+                                    .size(14.dp)
+                                    .background(
+                                        color =
+                                            Color(0xFFB8B0F2),
+                                        shape =
+                                            RoundedCornerShape(4.dp)
+                                    )
+                        )
+
+                        Text(
+                            text = "REMINDERS",
+                            style =
+                                MaterialTheme
+                                    .typography
+                                    .titleMedium,
+                            color =
+                                Color(0xFFB8B0F2),
+                            textAlign =
+                                TextAlign.Center,
+                            modifier =
+                                Modifier.padding(top = 7.dp)
+                        )
+
+                        Text(
+                            text =
+                                "Customize alert times\nfor meals",
                             style =
                                 MaterialTheme
                                     .typography
