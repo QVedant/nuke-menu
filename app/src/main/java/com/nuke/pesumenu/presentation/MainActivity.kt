@@ -4,15 +4,14 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Bundle
-import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -42,6 +41,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.rotary.onPreRotaryScrollEvent
@@ -66,7 +70,6 @@ import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
@@ -309,6 +312,93 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
+fun rememberEdgeBounce(
+    isAtTop: () -> Boolean,
+    isAtBottom: () -> Boolean,
+    maxDragOffset: Float = 55f
+): Pair<NestedScrollConnection, Animatable<Float, AnimationVector1D>> {
+    val overscrollAnim = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val view = LocalView.current
+
+    val connection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val current = overscrollAnim.value
+                if (current > 0f && available.y < 0f) {
+                    val delta = available.y.coerceAtLeast(-current)
+                    scope.launch { overscrollAnim.snapTo(current + delta) }
+                    return Offset(0f, delta)
+                } else if (current < 0f && available.y > 0f) {
+                    val delta = available.y.coerceAtMost(-current)
+                    scope.launch { overscrollAnim.snapTo(current + delta) }
+                    return Offset(0f, delta)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput) {
+                    if (available.y > 0f && isAtTop()) {
+                        val newOffset = (overscrollAnim.value + available.y * 0.35f).coerceAtMost(maxDragOffset)
+                        scope.launch { overscrollAnim.snapTo(newOffset) }
+                        return Offset(0f, available.y)
+                    } else if (available.y < 0f && isAtBottom()) {
+                        val newOffset = (overscrollAnim.value + available.y * 0.35f).coerceAtLeast(-maxDragOffset)
+                        scope.launch { overscrollAnim.snapTo(newOffset) }
+                        return Offset(0f, available.y)
+                    }
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (overscrollAnim.value != 0f) {
+                    overscrollAnim.animateTo(
+                        targetValue = 0f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    )
+                    return available
+                }
+                return Velocity.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (available.y > 0f && isAtTop()) {
+                    view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                    val target = (available.y * 0.03f).coerceIn(8f, 25f)
+                    overscrollAnim.animateTo(target, tween(durationMillis = 80))
+                    overscrollAnim.animateTo(
+                        targetValue = 0f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    )
+                } else if (available.y < 0f && isAtBottom()) {
+                    view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                    val target = (available.y * 0.03f).coerceIn(-25f, -8f)
+                    overscrollAnim.animateTo(target, tween(durationMillis = 80))
+                    overscrollAnim.animateTo(
+                        targetValue = 0f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    )
+                }
+                return Velocity.Zero
+            }
+        }
+    }
+
+    return connection to overscrollAnim
+}
+
+@Composable
 fun SettingsScreen(
     onChangeWeek: () -> Unit,
     onReminders: () -> Unit,
@@ -322,9 +412,15 @@ fun SettingsScreen(
         )
 
     val view = LocalView.current
+    val rotaryScope = rememberCoroutineScope()
+
+    val (edgeBounceConnection, overscrollAnim) = rememberEdgeBounce(
+        isAtTop = { listState.centerItemIndex == 0 },
+        isAtBottom = { listState.centerItemIndex >= 2 }
+    )
 
     var lastHapticPosition by remember {
-        mutableStateOf(0)
+        mutableIntStateOf(0)
     }
 
     LaunchedEffect(listState.centerItemIndex) {
@@ -344,7 +440,47 @@ fun SettingsScreen(
     ) {
         ScalingLazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .nestedScroll(edgeBounceConnection)
+                .graphicsLayer {
+                    translationY = overscrollAnim.value
+                }
+                .onPreRotaryScrollEvent { event ->
+                    if (listState.centerItemIndex == 0 && event.verticalScrollPixels < 0) {
+                        if (!overscrollAnim.isRunning) {
+                            view.performHapticFeedback(HapticFeedbackConstants.REJECT)
+                            rotaryScope.launch {
+                                overscrollAnim.animateTo(18f, tween(durationMillis = 75))
+                                overscrollAnim.animateTo(
+                                    0f,
+                                    spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness = Spring.StiffnessMediumLow
+                                    )
+                                )
+                            }
+                        }
+                        true
+                    } else if (listState.centerItemIndex >= 2 && event.verticalScrollPixels > 0) {
+                        if (!overscrollAnim.isRunning) {
+                            view.performHapticFeedback(HapticFeedbackConstants.REJECT)
+                            rotaryScope.launch {
+                                overscrollAnim.animateTo(-18f, tween(durationMillis = 75))
+                                overscrollAnim.animateTo(
+                                    0f,
+                                    spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness = Spring.StiffnessMediumLow
+                                    )
+                                )
+                            }
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                },
             autoCentering = AutoCenteringParams(itemIndex = 0),
             flingBehavior =
                 androidx.wear.compose.foundation.lazy
@@ -634,7 +770,7 @@ fun MenuScreen(
     }
 
     var refreshKey by remember {
-        mutableStateOf(0)
+        mutableIntStateOf(0)
     }
 
     val repository = remember {
@@ -701,8 +837,13 @@ fun MenuScreen(
 
     val view = LocalView.current
 
+    val (edgeBounceConnection, overscrollAnim) = rememberEdgeBounce(
+        isAtTop = { listState.centerItemIndex == 0 },
+        isAtBottom = { listState.centerItemIndex >= 5 }
+    )
+
     var lastHapticPosition by remember {
-        mutableStateOf(0)
+        mutableIntStateOf(0)
     }
 
     LaunchedEffect(listState.centerItemIndex) {
@@ -735,6 +876,10 @@ fun MenuScreen(
 
                     modifier = Modifier
                         .fillMaxSize()
+                        .nestedScroll(edgeBounceConnection)
+                        .graphicsLayer {
+                            translationY = overscrollAnim.value
+                        }
                         .onPreRotaryScrollEvent { event ->
 
                             /*
@@ -758,6 +903,46 @@ fun MenuScreen(
                                     )
                                 }
 
+                                true
+
+                            } else if (
+                                listState.centerItemIndex == 0 &&
+                                event.verticalScrollPixels < 0
+                            ) {
+                                // Top boundary - rotary overscroll bounce!
+                                if (!overscrollAnim.isRunning) {
+                                    view.performHapticFeedback(HapticFeedbackConstants.REJECT)
+                                    rotaryScope.launch {
+                                        overscrollAnim.animateTo(18f, tween(durationMillis = 75))
+                                        overscrollAnim.animateTo(
+                                            0f,
+                                            spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
+                                            )
+                                        )
+                                    }
+                                }
+                                true
+
+                            } else if (
+                                listState.centerItemIndex >= 5 &&
+                                event.verticalScrollPixels > 0
+                            ) {
+                                // Bottom boundary - rotary overscroll bounce!
+                                if (!overscrollAnim.isRunning) {
+                                    view.performHapticFeedback(HapticFeedbackConstants.REJECT)
+                                    rotaryScope.launch {
+                                        overscrollAnim.animateTo(-18f, tween(durationMillis = 75))
+                                        overscrollAnim.animateTo(
+                                            0f,
+                                            spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
+                                            )
+                                        )
+                                    }
+                                }
                                 true
 
                             } else {
@@ -801,6 +986,13 @@ fun MenuScreen(
                             modifier = Modifier
                                 .fillParentMaxSize()
                                 .padding(horizontal = 16.dp)
+                                .graphicsLayer {
+                                    if (overscrollAnim.value > 0f) {
+                                        val stretch = 1f + (overscrollAnim.value / 600f)
+                                        scaleX = stretch
+                                        scaleY = stretch
+                                    }
+                                }
                         ) {
 
                             Column(
@@ -995,10 +1187,20 @@ fun MenuScreen(
                      */
                     item {
 
-                        SettingsFooterCard(
-                            isCentered = listState.centerItemIndex == 5,
-                            onClick = onSettings
-                        )
+                        Box(
+                            modifier = Modifier.graphicsLayer {
+                                if (overscrollAnim.value < 0f) {
+                                    val stretch = 1f + ((-overscrollAnim.value) / 600f)
+                                    scaleX = stretch
+                                    scaleY = stretch
+                                }
+                            }
+                        ) {
+                            SettingsFooterCard(
+                                isCentered = listState.centerItemIndex == 5,
+                                onClick = onSettings
+                            )
+                        }
                     }
                 }
             }
@@ -1102,7 +1304,7 @@ fun MealCard(
         mealName.lowercase()
             .replaceFirstChar { it.uppercase() }
 
-    androidx.wear.compose.material3.Card(
+    Card(
         onClick = onClick,
         interactionSource = interactionSource,
         modifier = Modifier
@@ -1114,11 +1316,9 @@ fun MealCard(
             },
         shape = RoundedCornerShape(24.dp),
         colors =
-            androidx.wear.compose.material3
-                .CardDefaults
-                .cardColors(
-                    containerColor = cardBackground
-                )
+            CardDefaults.cardColors(
+                containerColor = cardBackground
+            )
     ) {
 
         Column(
@@ -1261,7 +1461,7 @@ fun SettingsFooterCard(
     val chipTextColor =
         Color(0xFF292443)
 
-    androidx.wear.compose.material3.Card(
+    Card(
         onClick = onClick,
         interactionSource = interactionSource,
         modifier = Modifier
@@ -1273,11 +1473,9 @@ fun SettingsFooterCard(
             },
         shape = RoundedCornerShape(24.dp),
         colors =
-            androidx.wear.compose.material3
-                .CardDefaults
-                .cardColors(
-                    containerColor = cardBackground
-                )
+            CardDefaults.cardColors(
+                containerColor = cardBackground
+            )
     ) {
         Column(
             modifier = Modifier
@@ -1468,7 +1666,7 @@ fun EditMealScreen(
                  */
                 item {
 
-                    androidx.wear.compose.material3.Card(
+                    Card(
                         onClick = {
                             // The text field handles editing.
                         },
@@ -1481,8 +1679,7 @@ fun EditMealScreen(
                         shape =
                             RoundedCornerShape(24.dp),
                         colors =
-                            androidx.wear.compose.material3
-                                .CardDefaults
+                            CardDefaults
                                 .cardColors(
                                     containerColor =
                                         editorBackground
