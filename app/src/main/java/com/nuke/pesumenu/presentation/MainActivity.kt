@@ -10,6 +10,7 @@ import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -28,6 +29,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -51,10 +56,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.AutoCenteringParams
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
 import androidx.wear.compose.material3.AppScaffold
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.Icon
@@ -289,188 +296,256 @@ fun SettingsScreen(
     onReminders: () -> Unit,
     onBack: () -> Unit
 ) {
+    BackHandler(onBack = onBack)
+
     val listState =
         rememberScalingLazyListState(
             initialCenterItemIndex = 0
         )
 
+    val view = LocalView.current
+
+    var lastHapticPosition by remember {
+        mutableStateOf(0)
+    }
+
+    LaunchedEffect(listState.centerItemIndex) {
+        val currentPosition =
+            listState.centerItemIndex.coerceIn(0, 2)
+
+        if (currentPosition != lastHapticPosition) {
+            view.performHapticFeedback(
+                HapticFeedbackConstants.CLOCK_TICK
+            )
+            lastHapticPosition = currentPosition
+        }
+    }
+
     ScreenScaffold(
         scrollState = listState
     ) {
-
         ScalingLazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
+            autoCentering = AutoCenteringParams(itemIndex = 0),
+            flingBehavior =
+                androidx.wear.compose.foundation.lazy
+                    .ScalingLazyColumnDefaults
+                    .snapFlingBehavior(
+                        listState
+                    ),
+            rotaryScrollableBehavior =
+                RotaryScrollableDefaults.snapBehavior(
+                    scrollableState = listState,
+                    snapSensitivity = 0.6f
+                ),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-
             // ---------------------------------------------
-            // CHANGE WEEK
+            // 0: CHANGE WEEK
             // ---------------------------------------------
-
             item {
+                SettingsOptionCard(
+                    title = "CHANGE WEEK",
+                    subtitle = "Choose a different\ncanteen week",
+                    isCentered = listState.centerItemIndex == 0,
+                    onClick = onChangeWeek
+                )
+            }
+
+            // ---------------------------------------------
+            // 1: REMINDERS
+            // ---------------------------------------------
+            item {
+                SettingsOptionCard(
+                    title = "REMINDERS",
+                    subtitle = "Customize alert times\nfor meals",
+                    isCentered = listState.centerItemIndex == 1,
+                    onClick = onReminders
+                )
+            }
+
+            // ---------------------------------------------
+            // 2: BACK
+            // ---------------------------------------------
+            item {
+                val isCentered = listState.centerItemIndex == 2
+
+                val cardScale by animateFloatAsState(
+                    targetValue = if (isCentered) 1f else 0.94f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    ),
+                    label = "back_card_scale"
+                )
+
+                val pillColor = if (isCentered) Color(0xFFB8B0F2) else Color(0xFF211D35)
+                val textColor = if (isCentered) Color(0xFF211D35) else Color(0xFF8A849F)
 
                 Card(
-                    onClick = onChangeWeek,
-                    modifier =
-                        Modifier
-                            .padding(horizontal = 14.dp)
-                            .fillMaxWidth(),
-                    shape =
-                        RoundedCornerShape(24.dp),
-                    colors =
-                        CardDefaults.cardColors(
-                            containerColor =
-                                Color(0xFF211D35)
-                        )
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                        onBack()
+                    },
+                    modifier = Modifier
+                        .padding(horizontal = 14.dp)
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            scaleX = cardScale
+                            scaleY = cardScale
+                        },
+                    shape = RoundedCornerShape(26.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.Transparent
+                    )
                 ) {
-
-                    Column(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    horizontal = 16.dp,
-                                    vertical = 18.dp
-                                ),
-                        horizontalAlignment =
-                            Alignment.CenterHorizontally
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-
-                        Box(
-                            modifier =
-                                Modifier
-                                    .size(14.dp)
-                                    .background(
-                                        color =
-                                            Color(0xFFB8B0F2),
-                                        shape =
-                                            RoundedCornerShape(4.dp)
-                                    )
-                        )
-
-                        Text(
-                            text = "CHANGE WEEK",
-                            style =
-                                MaterialTheme
-                                    .typography
-                                    .titleMedium,
-                            color =
-                                Color(0xFFB8B0F2),
-                            textAlign =
-                                TextAlign.Center,
-                            modifier =
-                                Modifier.padding(top = 7.dp)
-                        )
-
-                        Text(
-                            text =
-                                "Choose a different\ncanteen week",
-                            style =
-                                MaterialTheme
-                                    .typography
-                                    .bodySmall,
-                            color =
-                                Color(0xFFB8B4C4),
-                            textAlign =
-                                TextAlign.Center,
-                            modifier =
-                                Modifier.padding(top = 3.dp)
-                        )
+                        Button(
+                            onClick = {
+                                view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                                onBack()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(38.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = pillColor
+                            ),
+                            shape = RoundedCornerShape(50.dp)
+                        ) {
+                            Text(
+                                text = "BACK",
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                ),
+                                color = textColor
+                            )
+                        }
                     }
                 }
             }
+        }
+    }
+}
 
-            // ---------------------------------------------
-            // REMINDER TIMES
-            // ---------------------------------------------
 
-            item {
+@Composable
+fun SettingsOptionCard(
+    title: String,
+    subtitle: String,
+    isCentered: Boolean,
+    onClick: () -> Unit
+) {
+    val interactionSource =
+        remember {
+            MutableInteractionSource()
+        }
 
-                Card(
-                    onClick = onReminders,
-                    modifier =
-                        Modifier
-                            .padding(horizontal = 14.dp)
-                            .fillMaxWidth(),
-                    shape =
-                        RoundedCornerShape(24.dp),
-                    colors =
-                        CardDefaults.cardColors(
-                            containerColor =
-                                Color(0xFF211D35)
-                        )
-                ) {
+    val pressed by
+    interactionSource.collectIsPressedAsState()
 
-                    Column(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    horizontal = 16.dp,
-                                    vertical = 18.dp
-                                ),
-                        horizontalAlignment =
-                            Alignment.CenterHorizontally
-                    ) {
+    val cardScale by
+    animateFloatAsState(
+        targetValue =
+            if (pressed) {
+                0.97f
+            } else if (isCentered) {
+                1f
+            } else {
+                0.94f
+            },
+        animationSpec =
+            spring(
+                dampingRatio =
+                    Spring.DampingRatioNoBouncy,
+                stiffness =
+                    Spring.StiffnessMedium
+            ),
+        label = "settings_option_scale"
+    )
 
-                        Box(
-                            modifier =
-                                Modifier
-                                    .size(14.dp)
-                                    .background(
-                                        color =
-                                            Color(0xFFB8B0F2),
-                                        shape =
-                                            RoundedCornerShape(4.dp)
-                                    )
-                        )
+    val cardBackground =
+        if (isCentered) {
+            Color(0xFF342F52)
+        } else {
+            Color(0xFF211D35)
+        }
 
-                        Text(
-                            text = "REMINDERS",
-                            style =
-                                MaterialTheme
-                                    .typography
-                                    .titleMedium,
-                            color =
-                                Color(0xFFB8B0F2),
-                            textAlign =
-                                TextAlign.Center,
-                            modifier =
-                                Modifier.padding(top = 7.dp)
-                        )
+    val accent =
+        if (isCentered) {
+            Color(0xFFB8B0F2)
+        } else {
+            Color(0xFF8A849F)
+        }
 
-                        Text(
-                            text =
-                                "Customize alert times\nfor meals",
-                            style =
-                                MaterialTheme
-                                    .typography
-                                    .bodySmall,
-                            color =
-                                Color(0xFFB8B4C4),
-                            textAlign =
-                                TextAlign.Center,
-                            modifier =
-                                Modifier.padding(top = 3.dp)
-                        )
-                    }
-                }
-            }
+    val subtitleColor =
+        if (isCentered) {
+            Color(0xFFF0EDF4)
+        } else {
+            Color(0xFFB8B4C4)
+        }
 
-            // ---------------------------------------------
-            // BACK
-            // ---------------------------------------------
+    Card(
+        onClick = onClick,
+        interactionSource = interactionSource,
+        modifier = Modifier
+            .padding(horizontal = 14.dp)
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = cardScale
+                scaleY = cardScale
+            },
+        shape = RoundedCornerShape(24.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = cardBackground
+            )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    horizontal = 16.dp,
+                    vertical = 18.dp
+                ),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(14.dp)
+                    .background(
+                        color = accent,
+                        shape = RoundedCornerShape(4.dp)
+                    )
+            )
 
-            item {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Bold
+                ),
+                color = accent,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 7.dp)
+            )
 
-                Button(
-                    onClick = onBack
-                ) {
-                    Text("BACK")
-                }
-            }
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = subtitleColor,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 3.dp)
+            )
         }
     }
 }
@@ -583,6 +658,7 @@ fun MenuScreen(
      * 2 = Lunch
      * 3 = Snacks
      * 4 = Dinner
+     * 5 = Settings & NUKE Logo
      */
 
     val listState =
@@ -602,7 +678,7 @@ fun MenuScreen(
     LaunchedEffect(listState.centerItemIndex) {
 
         val currentPosition =
-            listState.centerItemIndex.coerceIn(0, 4)
+            listState.centerItemIndex.coerceIn(0, 5)
 
         if (currentPosition != lastHapticPosition) {
 
@@ -819,36 +895,15 @@ fun MenuScreen(
                         }
                     }
 
-                    item {
-
-                        IconButton(
-                            onClick = onSettings,
-                            modifier = Modifier
-                                .size(40.dp)
-                        ) {
-                            Icon(
-                                imageVector = settings,
-                                contentDescription = "Settings",
-                                modifier = Modifier.size(18.dp),
-                                tint = Color(0xFFB8B0F2)
-                            )
-                        }
-                    }
 
                     /*
-                     * NUKE branding
-                     * Kept after Settings so it stays at the end
-                     * of the menu without interfering with snapping.
+                     * SETTINGS & NUKE LOGO
                      */
                     item {
 
-                        Image(
-                            painter = painterResource(
-                                id = R.drawable.nuke_logo4
-                            ),
-                            contentDescription = "NUKE",
-                            modifier = Modifier
-                                .size(90.dp)
+                        SettingsFooterCard(
+                            isCentered = listState.centerItemIndex == 5,
+                            onClick = onSettings
                         )
                     }
                 }
@@ -1060,6 +1115,135 @@ fun MealCard(
                     Modifier
                         .fillMaxWidth()
                         .padding(top = 7.dp)
+            )
+        }
+    }
+}
+
+
+@Composable
+fun SettingsFooterCard(
+    isCentered: Boolean,
+    onClick: () -> Unit
+) {
+    val interactionSource =
+        remember {
+            MutableInteractionSource()
+        }
+
+    val pressed by
+    interactionSource.collectIsPressedAsState()
+
+    val cardScale by
+    animateFloatAsState(
+        targetValue =
+            if (pressed) {
+                0.97f
+            } else if (isCentered) {
+                1f
+            } else {
+                0.96f
+            },
+        animationSpec =
+            spring(
+                dampingRatio =
+                    Spring.DampingRatioNoBouncy,
+                stiffness =
+                    Spring.StiffnessMedium
+            ),
+        label = "settings_card_scale"
+    )
+
+    val cardBackground =
+        Color.Black
+
+    val chipColor =
+        if (isCentered) {
+            Color(0xFFC9C4F5)
+        } else {
+            Color(0xFF8D899B)
+        }
+
+    val chipTextColor =
+        Color(0xFF292443)
+
+    androidx.wear.compose.material3.Card(
+        onClick = onClick,
+        interactionSource = interactionSource,
+        modifier = Modifier
+            .padding(horizontal = 12.dp)
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = cardScale
+                scaleY = cardScale
+            },
+        shape = RoundedCornerShape(24.dp),
+        colors =
+            androidx.wear.compose.material3
+                .CardDefaults
+                .cardColors(
+                    containerColor = cardBackground
+                )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    horizontal = 14.dp,
+                    vertical = 12.dp
+                ),
+            horizontalAlignment =
+                Alignment.CenterHorizontally,
+            verticalArrangement =
+                Arrangement.Center
+        ) {
+            // Settings Pill
+            Row(
+                verticalAlignment =
+                    Alignment.CenterVertically,
+                horizontalArrangement =
+                    Arrangement.Center,
+                modifier = Modifier
+                    .background(
+                        color = chipColor,
+                        shape = RoundedCornerShape(50.dp)
+                    )
+                    .padding(
+                        horizontal = 14.dp,
+                        vertical = 5.dp
+                    )
+            ) {
+                Icon(
+                    imageVector = settings,
+                    contentDescription = "Settings",
+                    modifier = Modifier.size(14.dp),
+                    tint = chipTextColor
+                )
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Text(
+                    text = "SETTINGS",
+                    style =
+                        MaterialTheme
+                            .typography
+                            .labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                letterSpacing = 0.5.sp
+                            ),
+                    color = chipTextColor
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Image(
+                painter = painterResource(
+                    id = R.drawable.nuke_logo4
+                ),
+                contentDescription = "NUKE",
+                modifier = Modifier.size(56.dp)
             )
         }
     }
