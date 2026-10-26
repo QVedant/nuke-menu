@@ -62,6 +62,11 @@ object NotificationHelper {
                 flags =
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                             Intent.FLAG_ACTIVITY_CLEAR_TOP
+                if (mealName.contains("SLEEP OR NAH", ignoreCase = true) ||
+                    mealName.contains("TOMORROW", ignoreCase = true)
+                ) {
+                    putExtra("initial_tomorrow", true)
+                }
             }
 
         val pendingIntent =

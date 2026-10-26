@@ -19,6 +19,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -85,6 +86,8 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
 class MainActivity : ComponentActivity() {
 
+    private var openTomorrow = mutableStateOf(false)
+
     private val notificationPermissionLauncher =
         registerForActivityResult(
             ActivityResultContracts.RequestPermission()
@@ -94,9 +97,21 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra("initial_tomorrow", false)) {
+            openTomorrow.value = true
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+
+        if (intent.getBooleanExtra("initial_tomorrow", false)) {
+            openTomorrow.value = true
+        }
 
         window.setBackgroundDrawableResource(
             android.R.color.black
@@ -194,8 +209,11 @@ class MainActivity : ComponentActivity() {
 
                             "menu" -> {
 
+                                val initialTomorrow by openTomorrow
+
                                 MenuScreen(
                                     preferences = preferences,
+                                    initialTomorrow = initialTomorrow,
                                     onSettings = {
                                         currentScreen = "settings"
                                     }
@@ -555,19 +573,30 @@ fun SettingsOptionCard(
 @Composable
 fun MenuScreen(
     preferences: AppPreferences,
+    initialTomorrow: Boolean = false,
     onSettings: () -> Unit
 ) {
 
     val context = LocalContext.current
 
-    val currentWeek =
-        preferences.getCurrentWeek()
+    var isTomorrow by remember(initialTomorrow) {
+        mutableStateOf(initialTomorrow)
+    }
 
-    val today =
-        java.time.LocalDate.now()
+    val targetDate = remember(isTomorrow) {
+        if (isTomorrow) {
+            java.time.LocalDate.now().plusDays(1)
+        } else {
+            java.time.LocalDate.now()
+        }
+    }
 
-    val currentDay =
-        when (today.dayOfWeek) {
+    val displayedWeek = remember(targetDate) {
+        preferences.getWeekForDate(targetDate)
+    }
+
+    val displayedDay = remember(targetDate) {
+        when (targetDate.dayOfWeek) {
             java.time.DayOfWeek.SUNDAY ->
                 Day.SUNDAY
 
@@ -589,9 +618,10 @@ fun MenuScreen(
             java.time.DayOfWeek.SATURDAY ->
                 Day.SATURDAY
         }
+    }
 
     val dayNumber =
-        currentDay.ordinal + 1
+        displayedDay.ordinal + 1
 
     var meals by remember {
         mutableStateOf<List<MealEntity>>(
@@ -617,7 +647,7 @@ fun MenuScreen(
     }
 
     LaunchedEffect(
-        currentWeek,
+        displayedWeek,
         dayNumber,
         refreshKey
     ) {
@@ -626,7 +656,7 @@ fun MenuScreen(
 
         meals =
             repository.getMealsForDay(
-                week = currentWeek,
+                week = displayedWeek,
                 day = dayNumber
             )
     }
@@ -793,7 +823,7 @@ fun MenuScreen(
 
                                 Text(
                                     text =
-                                        "WEEK $currentWeek • ${currentDay.name}",
+                                        "WEEK $displayedWeek • ${displayedDay.name}",
                                     style =
                                         MaterialTheme.typography.titleSmall.copy(
                                             fontSize = 12.sp
@@ -803,8 +833,72 @@ fun MenuScreen(
                                     textAlign =
                                         TextAlign.Center,
                                     modifier =
-                                        Modifier.padding(top = 8.dp)
+                                        Modifier.padding(top = 6.dp)
                                 )
+
+                                // SNEAK PEEK: [ TODAY | TOMORROW ] TOGGLE PILL
+                                Row(
+                                    modifier = Modifier
+                                        .padding(top = 10.dp)
+                                        .background(
+                                            color = Color(0xFF211D35),
+                                            shape = RoundedCornerShape(50.dp)
+                                        )
+                                        .padding(3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // TODAY segment
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(50.dp))
+                                            .background(
+                                                if (!isTomorrow) Color(0xFFB8B0F2) else Color.Transparent
+                                            )
+                                            .clickable {
+                                                if (isTomorrow) {
+                                                    view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                                                    isTomorrow = false
+                                                }
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "TODAY",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontSize = 10.sp,
+                                                fontWeight = if (!isTomorrow) FontWeight.Bold else FontWeight.Medium
+                                            ),
+                                            color = if (!isTomorrow) Color(0xFF211D35) else Color(0xFF8A849F)
+                                        )
+                                    }
+
+                                    // TOMORROW segment
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(50.dp))
+                                            .background(
+                                                if (isTomorrow) Color(0xFFB8B0F2) else Color.Transparent
+                                            )
+                                            .clickable {
+                                                if (!isTomorrow) {
+                                                    view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                                                    isTomorrow = true
+                                                }
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "TOMORROW",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontSize = 10.sp,
+                                                fontWeight = if (isTomorrow) FontWeight.Bold else FontWeight.Medium
+                                            ),
+                                            color = if (isTomorrow) Color(0xFF211D35) else Color(0xFF8A849F)
+                                        )
+                                    }
+                                }
                             }
 
                             CurvedRotaryHint(

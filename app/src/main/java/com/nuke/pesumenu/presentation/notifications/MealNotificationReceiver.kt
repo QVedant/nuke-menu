@@ -71,7 +71,7 @@ class MealNotificationReceiver : BroadcastReceiver() {
                 if (meal != null) {
 
                     val mealName = if (isTomorrow) {
-                        "TOMORROW'S BREAKFAST"
+                        "SLEEP OR NAH? 😴"
                     } else {
                         when (mealType) {
                             1 -> "BREAKFAST"

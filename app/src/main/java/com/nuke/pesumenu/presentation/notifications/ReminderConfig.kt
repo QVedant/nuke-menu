@@ -49,7 +49,7 @@ data class ReminderConfig(
         val TOMORROW_BREAKFAST = ReminderConfig(
             id = 1005,
             key = "reminder_tomorrow_breakfast",
-            title = "Tomorrow's Breakfast",
+            title = "Sleep or Nah?",
             defaultHour = 21,
             defaultMinute = 0,
             mealType = 1,
