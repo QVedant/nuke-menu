@@ -12,7 +12,7 @@ android {
 
     defaultConfig {
         applicationId = "com.nuke.pesumenu"
-        minSdk = 35
+        minSdk = 34
         targetSdk = 37
         versionCode = 1
         versionName = "1.0.0"
